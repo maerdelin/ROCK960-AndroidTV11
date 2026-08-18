@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$(dirname "$0")/common.sh"
+
+require_dir "$SOURCE_DIR/.repo"
+require_file "$SOURCE_DIR/device/google/atv/products/atv_base.mk"
+require_file "$SOURCE_DIR/device/google/atv/products/atv_system.mk"
+require_file "$SOURCE_DIR/device/rockchip/rk3399/rk3399_atv/BoardConfig.mk"
+require_file "$SOURCE_DIR/device/rockchip/rk3399/rk3399_atv/rk3399_atv.mk"
+require_file "$SOURCE_DIR/device/rockchip/rk3399/rk3399_atv/parameter.txt"
+require_file "$SOURCE_DIR/device/rockchip/common/BoardConfig.mk"
+require_file "$SOURCE_DIR/device/rockchip/common/device.mk"
+require_file "$ROCK960_BASE_DTS"
+require_file "$ROCK960_LINUX_DTSI"
+require_file "$SOURCE_DIR/kernel/arch/arm64/configs/android-11.config"
+require_file "$SOURCE_DIR/RKTools/linux/Linux_Pack_Firmware/rockdev/mkupdate_rk3399.sh"
+require_file "$SOURCE_DIR/RKTools/linux/Linux_Pack_Firmware/rockdev/package-file"
+require_file "$SOURCE_DIR/rkst/Image/misc.img"
+require_file "$SOURCE_DIR/vendor/rockchip/common/wifi/firmware/fw_bcm4356a2_ag.bin"
+require_file "$SOURCE_DIR/vendor/rockchip/common/wifi/firmware/fw_bcm4356a2_ag_apsta.bin"
+require_file "$SOURCE_DIR/vendor/rockchip/common/wifi/firmware/fw_bcm4356a2_ag_p2p.bin"
+require_file "$SOURCE_DIR/vendor/rockchip/common/wifi/firmware/nvram_ap6356s.txt"
+require_file "$SOURCE_DIR/kernel/drivers/net/wireless/rockchip_wlan/rkwifi/rk_wifi_config.c"
+require_file "$SOURCE_DIR/u-boot/configs/rk3399_defconfig"
+require_file "$SOURCE_DIR/u-boot/arch/arm/dts/rk3399-evb.dts"
+
+mkdir -p "$ARTIFACT_DIR/audit"
+log "auditing ASUS Android 11 U-Boot against ROCK960 A/B boot-critical contract"
+python3 "$CONTROLLER_DIR/tools/audit_uboot_rock960.py" \
+  --u-boot "$SOURCE_DIR/u-boot" \
+  --report "$ARTIFACT_DIR/audit/uboot-rock960-audit.txt"
+
+require_dir "$GENERATED_DEVICE_DIR"
+require_file "$ROCK960_ANDROID_BASE_DTSI"
+require_file "$ROCK960_ANDROID_DTS"
+require_file "$GENERATED_DEVICE_DIR/${PRODUCT_NAME}.mk"
+
+check() {
+  local pattern="$1" file="$2" label="$3"
+  grep -Eq "$pattern" "$file" || die "source audit failed: $label ($file)"
+  log "OK: $label"
+}
+
+check_absent() {
+  local pattern="$1" file="$2" label="$3"
+  if grep -Eq "$pattern" "$file"; then
+    die "source audit failed: forbidden $label remains in $file"
+  fi
+  log "OK: $label absent"
+}
+
+PRODUCT_MK="$GENERATED_DEVICE_DIR/${PRODUCT_NAME}.mk"
+check 'PRODUCT_CHARACTERISTICS[[:space:]]*:=[[:space:]]*tv' "$PRODUCT_MK" "TV product characteristic"
+check 'PRODUCT_BOOT_DEVICE[[:space:]]*:=[[:space:]]*fe330000.sdhci' "$PRODUCT_MK" "RK3399 eMMC boot controller"
+CAM_EXPECTED="false"
+[[ "$ENABLE_CAMERA" == 1 ]] && CAM_EXPECTED="true"
+check "PRODUCT_SUPPORTS_CAMERA[[:space:]]*:=[[:space:]]*${CAM_EXPECTED}" "$PRODUCT_MK" "camera framework policy set before ATV inherit"
+CAM_LINE="$(grep -n -m1 'PRODUCT_SUPPORTS_CAMERA[[:space:]]*:=' "$PRODUCT_MK" | cut -d: -f1)"
+INHERIT_LINE="$(grep -n -m1 'inherit-product, device/rockchip/rk3399/' "$PRODUCT_MK" | cut -d: -f1)"
+[[ -n "$CAM_LINE" && -n "$INHERIT_LINE" && "$CAM_LINE" -lt "$INHERIT_LINE" ]] || die "PRODUCT_SUPPORTS_CAMERA must be set before Rockchip device.mk inheritance"
+
+check 'PRODUCT_KERNEL_DTS[[:space:]]*:=[[:space:]]*rk3399-rock960-ab-android' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "ROCK960 Android DTS selected"
+check 'PRODUCT_KERNEL_CONFIG[[:space:]]*:=[[:space:]]*rockchip_defconfig android-10.config' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "RK3399 ATV kernel base fragments"
+check 'PRODUCT_KERNEL_CONFIG[[:space:]]*\+=[[:space:]]*android-11.config' "$SOURCE_DIR/device/rockchip/common/BoardConfig.mk" "Android 11 kernel fragment appended by common config"
+check 'TARGET_BOARD_PLATFORM_GPU[[:space:]]*:=[[:space:]]*mali-t860' "$SOURCE_DIR/device/rockchip/rk3399/BoardConfig.mk" "Mali-T860 userspace target"
+check 'TARGET_BOARD_PLATFORM_PRODUCT[[:space:]]*\?=[[:space:]]*atv' "$SOURCE_DIR/device/rockchip/rk3399/BoardConfig.mk" "ATV platform route"
+check 'inherit-product,[[:space:]]*device/google/atv/products/atv_base.mk' "$SOURCE_DIR/device/rockchip/common/device.mk" "AOSP ATV base inheritance"
+check 'PRODUCT_SUPPORTS_CAMERA[[:space:]]*\?=[[:space:]]*true' "$SOURCE_DIR/device/google/atv/products/atv_system.mk" "ATV camera default is guarded by ?="
+
+check '#include "rk3399-rock960-android-base.dtsi"' "$ROCK960_ANDROID_DTS" "sanitized Android base DTSI selected"
+check_absent '#include "rk3399-linux.dtsi"' "$ROCK960_ANDROID_DTS" "direct Linux DTSI include"
+check 'bootargs[[:space:]]*=[[:space:]]*"earlycon=uart8250,mmio32,0xff1a0000 coherent_pool=1m"' "$ROCK960_ANDROID_BASE_DTSI" "Android-safe kernel bootargs"
+check_absent 'root=PARTUUID=|rootfstype=ext4|rootwait' "$ROCK960_ANDROID_BASE_DTSI" "Linux root filesystem bootargs"
+
+check 'wifi_chip_type[[:space:]]*=[[:space:]]*"ap6356s"' "$ROCK960_ANDROID_DTS" "ROCK960 AP6356S module selector generated"
+check_absent 'wifi_chip_type[[:space:]]*=[[:space:]]*"ap6354"' "$ROCK960_ANDROID_DTS" "historical AP6354 module selector"
+check 'fw_bcmdhd\.bin' "$SOURCE_DIR/kernel/drivers/net/wireless/rockchip_wlan/rkwifi/rk_wifi_config.c" "bcmdhd generic firmware filename"
+check 'nvram\.txt' "$SOURCE_DIR/kernel/drivers/net/wireless/rockchip_wlan/rkwifi/rk_wifi_config.c" "bcmdhd generic NVRAM filename"
+check 'fw_bcm4356a2_ag\.bin:[$][(]TARGET_COPY_OUT_VENDOR[)]/etc/firmware/fw_bcmdhd\.bin' "$GENERATED_DEVICE_DIR/device.mk" "BCM4356A2 STA firmware alias"
+check 'fw_bcm4356a2_ag_apsta\.bin:[$][(]TARGET_COPY_OUT_VENDOR[)]/etc/firmware/fw_bcmdhd_apsta\.bin' "$GENERATED_DEVICE_DIR/device.mk" "BCM4356A2 APSTA firmware alias"
+check 'fw_bcm4356a2_ag_p2p\.bin:[$][(]TARGET_COPY_OUT_VENDOR[)]/etc/firmware/fw_bcmdhd_p2p\.bin' "$GENERATED_DEVICE_DIR/device.mk" "BCM4356A2 P2P firmware alias"
+check 'nvram_ap6356s\.txt:[$][(]TARGET_COPY_OUT_VENDOR[)]/etc/firmware/nvram\.txt' "$GENERATED_DEVICE_DIR/device.mk" "AP6356S NVRAM alias"
+check 'BT,reset_gpio' "$ROCK960_ANDROID_DTS" "Bluetooth reset GPIO preserved"
+check '&uart0' "$ROCK960_ANDROID_DTS" "Bluetooth UART0 board route"
+check 'mmc-hs400-1_8v' "$ROCK960_ANDROID_DTS" "eMMC HS400"
+check 'fusb30x@22' "$ROCK960_ANDROID_DTS" "FUSB302 USB-C controller"
+check '&usbdrd_dwc3_0' "$ROCK960_ANDROID_DTS" "USB-C/OTG DWC3 route"
+check '&pcie0' "$ROCK960_ANDROID_DTS" "PCIe x4 board definition"
+check 'rockchip,remotectl-pwm' "$ROCK960_ANDROID_DTS" "IR PWM remote receiver"
+check '&route_hdmi' "$ROCK960_ANDROID_DTS" "HDMI DRM route enabled by Android glue"
+check 'rockchip,bclk-fs[[:space:]]*=[[:space:]]*<128>' "$ROCK960_ANDROID_DTS" "HDMI I2S clocking"
+check 'firmware_android:[[:space:]]*android' "$ROCK960_ANDROID_DTS" "Android firmware DT node for dtbo template"
+check '/dev/ttyS0' "$GENERATED_DEVICE_DIR/bt_vendor.conf" "Broadcom Bluetooth UART device"
+check 'android.hardware.drm' "$GENERATED_DEVICE_DIR/manifest.xml" "ATV DRM VINTF entries retained"
+check '0x00614000@0x00159400\(super\)' "$GENERATED_DEVICE_DIR/parameter.txt" "3.0 GiB-class super partition layout retained"
+check '0x0076d400\(userdata:grow\)' "$GENERATED_DEVICE_DIR/parameter.txt" "userdata grows after ~3.71 GiB fixed layout"
+
+check 'CONFIG_DEFAULT_DEVICE_TREE="rk3399-evb"' "$SOURCE_DIR/u-boot/configs/rk3399_defconfig" "audited RK3399 U-Boot DT baseline"
+log "U-Boot source contract passed for ROCK960 A/B; physical UART boot is still required for hardware validation"
+
+ETH_EXPECTED="false"
+[[ "$ENABLE_ETHERNET" == 1 ]] && ETH_EXPECTED="true"
+check "BOARD_HS_ETHERNET[[:space:]]*:=[[:space:]]*${ETH_EXPECTED}" "$GENERATED_DEVICE_DIR/BoardConfig.mk" "Ethernet product policy"
+check 'BOARD_GRAVITY_SENSOR_SUPPORT[[:space:]]*:=[[:space:]]*false' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "nonexistent onboard gravity sensor disabled"
+check 'BOARD_LIGHT_SENSOR_SUPPORT[[:space:]]*:=[[:space:]]*false' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "nonexistent onboard light sensor disabled"
+check 'TARGET_ROCKCHIP_PCBATEST[[:space:]]*:=[[:space:]]*false' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "Tinker/Rockchip factory PCBA suite disabled"
+check 'BOARD_HAS_STRESSTEST_APP[[:space:]]*:=[[:space:]]*false' "$GENERATED_DEVICE_DIR/BoardConfig.mk" "factory stress-test app disabled"
+
+mkdir -p "$ARTIFACT_DIR/audit"
+{
+  echo "ASUS_RELEASE_TAG=$ASUS_RELEASE_TAG"
+  echo "AOSP_RELEASE_TAG=$AOSP_RELEASE_TAG"
+  echo "PRODUCT_LUNCH=$PRODUCT_LUNCH"
+  echo "ENABLE_AVB=$ENABLE_AVB"
+  echo "camera=$CAM_EXPECTED"
+  echo "ethernet=$ETH_EXPECTED"
+  echo "wifi_module=AP6356S"
+  echo "wifi_selector=ap6356s"
+  echo "wifi_firmware=fw_bcm4356a2_ag.bin"
+  echo "wifi_firmware_apsta=fw_bcm4356a2_ag_apsta.bin"
+  echo "wifi_firmware_p2p=fw_bcm4356a2_ag_p2p.bin"
+  echo "wifi_nvram=nvram_ap6356s.txt"
+  echo "target_board_family=$TARGET_BOARD_FAMILY"
+  echo "uboot_contract=rock960-ab-pass"
+  echo "timestamp=$(date -u +%FT%TZ)"
+} > "$ARTIFACT_DIR/audit/source-audit.txt"
+log "source/hardware audit passed"
