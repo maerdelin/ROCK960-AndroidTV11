@@ -1,0 +1,47 @@
+diff --git a/drivers/gpu/drm/panel/panel-simple.c b/drivers/gpu/drm/panel/panel-simple.c
+index d29753d7c..6000072d9 100644
+--- a/drivers/gpu/drm/panel/panel-simple.c
++++ b/drivers/gpu/drm/panel/panel-simple.c
+@@ -711,7 +711,9 @@ static int panel_simple_prepare(struct drm_panel *panel)
+ static int panel_simple_enable(struct drm_panel *panel)
+ {
+ 	struct panel_simple *p = to_panel_simple(panel);
++#if defined(CONFIG_TINKER_MCU)
+ 	static bool the_first_time_rpi_enable = true;
++#endif
+ 	int err = 0;
+ 
+ 	printk("panel_simple_enable p->enabled=%d\n", p->enabled);
+@@ -3748,7 +3750,9 @@ static int panel_simple_dsi_probe(struct mipi_dsi_device *dsi)
+ 	struct panel_desc_dsi *d;
+ 	const struct of_device_id *id;
+ 	int err;
++#if defined(CONFIG_TINKER_MCU)
+ 	int dsi_id;
++#endif
+ 
+ 	printk("panel_simple_dsi_probe+\n");
+ 	id = of_match_node(dsi_of_match, dsi->dev.of_node);
+diff --git a/drivers/net/ethernet/stmicro/stmmac/eth_mac_tinker.c b/drivers/net/ethernet/stmicro/stmmac/eth_mac_tinker.c
+index 610240454..a9dee04b5 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/eth_mac_tinker.c
++++ b/drivers/net/ethernet/stmicro/stmmac/eth_mac_tinker.c
+@@ -31,13 +31,11 @@
+ 
+ int eth_mac_eeprom(u8 *eth_mac)
+ {
+-	int i;
++	/*
++	 * ROCK960 does not use the Tinker Board AT24 EEPROM
++	 * path for the Ethernet MAC address. Leave it invalid
++	 * so the normal stmmac/platform fallback can provide it.
++	 */
+ 	memset(eth_mac, 0, 6);
+-	printk("Read the Ethernet MAC address from EEPROM:");
+-	at24_read_eeprom(eth_mac, 0, 6);
+-	for(i=0; i<5; i++)
+-		printk("%2.2x:", eth_mac[i]);
+-	printk("%2.2x\n", eth_mac[i]);
+-
+ 	return 0;
+ }
