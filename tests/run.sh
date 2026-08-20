@@ -23,6 +23,12 @@ grep -q 'NEW_UNPACK/second' "$ROOT/scripts/repack-asus208-boot.sh"
 grep -q 'assert_geometry uboot 16384 8192' "$ROOT/scripts/repack-asus208-current.sh"
 grep -q 'assert_geometry super 2011136 6373376' "$ROOT/scripts/repack-asus208-current.sh"
 grep -q 'reproduce-asus208-current.sh' "$ROOT/README.md"
+# Regression guard for ASUS/Rockchip resource repack: the upstream helper must
+# execute from u-boot/ and copy the result back into kernel/.
+grep -Fq 'cd "$SOURCE_DIR/u-boot"' "$ROOT/scripts/in-tree-build.sh"
+grep -Fq './scripts/pack_resource.sh ../kernel/resource.img' "$ROOT/scripts/in-tree-build.sh"
+grep -Fq 'cp -a resource.img ../kernel/resource.img' "$ROOT/scripts/in-tree-build.sh"
+! grep -Fq 'u-boot/scripts/pack_resource.sh kernel/resource.img' "$ROOT/scripts/in-tree-build.sh"
 
 # The flash payload path must not regress to packaging persistent ASUS/Tinker U-Boot/trust.
 ! grep -Eq 'copy_required .*image_dir/(uboot|trust)\.img' "$ROOT/scripts/in-tree-build.sh"

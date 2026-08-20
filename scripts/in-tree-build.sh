@@ -111,7 +111,15 @@ build_kernel() {
   require_file "$SOURCE_DIR/kernel/arch/arm64/boot/Image"
   require_file "$SOURCE_DIR/kernel/arch/arm64/boot/dts/rockchip/${KERNEL_DTS}.dtb"
   if [[ -x u-boot/scripts/pack_resource.sh && -f kernel/resource.img ]]; then
-    u-boot/scripts/pack_resource.sh kernel/resource.img
+    # Upstream ASUS/Rockchip pack_resource.sh uses paths relative to u-boot/.
+    # Run it from that directory and copy the repacked resource back to kernel/,
+    # matching the pinned ASUS 2.0.8 build flow exactly.
+    (
+      cd "$SOURCE_DIR/u-boot"
+      ./scripts/pack_resource.sh ../kernel/resource.img
+      cp -a resource.img ../kernel/resource.img
+    )
+    require_file "$SOURCE_DIR/kernel/resource.img"
   fi
 }
 
