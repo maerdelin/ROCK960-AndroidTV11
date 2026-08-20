@@ -38,6 +38,7 @@ require_file "$BOOT"
 require_dir "$SOURCE_DIR/RKTools"
 require_dir "$SOURCE_DIR/rkbin"
 for cmd in sfdisk dd python3 stat awk cut; do require_cmd "$cmd"; done
+ensure_workspace
 
 work="$(mktemp -d "${WORKSPACE%/}/repack-asus208.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
@@ -94,6 +95,23 @@ with parts_out.open("w") as f:
     for name, start, size in parts:
         f.write(f"{name}\t{start}\t{size}\n")
 PY
+
+assert_geometry() {
+  local name="$1" expect_start="$2" expect_size="$3" row start size
+  row="$(awk -F '\t' -v n="$name" '$1 == n {print; exit}' "$PARTS")"
+  [[ -n "$row" ]] || die "missing expected partition: $name"
+  start="$(printf '%s\n' "$row" | cut -f2)"
+  size="$(printf '%s\n' "$row" | cut -f3)"
+  [[ "$start" == "$expect_start" && "$size" == "$expect_size" ]] \
+    || die "unexpected ASUS 2.0.8 $name geometry: start=$start size=$size; expected start=$expect_start size=$expect_size"
+}
+
+# These are the exact boot-critical locations used by the pinned RK3399 layout.
+# uboot/trust match the ROCK960 A/B RK3399 slots; boot is the 40 MiB ASUS 2.0.8 slot.
+assert_geometry uboot 16384 8192
+assert_geometry trust 24576 8192
+assert_geometry boot 59392 81920
+assert_geometry super 2011136 6373376
 
 extract_part() {
   local name="$1" row start sectors

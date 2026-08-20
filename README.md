@@ -136,6 +136,16 @@ include persistent U-Boot/trust payloads.
 Exact binary SHA-256 values can differ across independent Android builds because generated
 outputs/timestamps may differ. The source/partition/boot policy is what is kept identical.
 
+For a single command that rebuilds the kernel/DTB/resource and then reproduces this exact-current package path from the official ASUS raw image, run:
+
+```bash
+./scripts/reproduce-asus208-current.sh \
+  --firmware /path/Tinker_Board_2-Android11-v2.0.8-20220503.img \
+  --out /path/ROCK960-Android11-v2.0.8-update.img
+```
+
+This is the closest reproducible equivalent of the 2026-08-20 3.2 GiB test image. `one-shot.sh` remains the full source-built Android TV path and is intentionally not claimed to be byte-identical to that minimal official-ASUS-partitions image.
+
 ## Android TV product policy
 
 The generated product is `rock960_atv-userdebug`, cloned from Rockchip's Android 11

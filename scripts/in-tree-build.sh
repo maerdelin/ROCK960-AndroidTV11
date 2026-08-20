@@ -105,9 +105,9 @@ build_kernel() {
   local -a cfgs
   read -r -a cfgs <<< "$KERNEL_CONFIG"
   log "building kernel config: ${cfgs[*]}"
-  make -C kernel ARCH="$KERNEL_ARCH" "${cfgs[@]}"
+  make -C kernel ARCH="$KERNEL_ARCH" HOSTCFLAGS="$KERNEL_HOSTCFLAGS" "${cfgs[@]}"
   log "building kernel image/DTB: ${KERNEL_DTS}.img with -j${BUILD_JOBS}"
-  make -C kernel ARCH="$KERNEL_ARCH" "${KERNEL_DTS}.img" -j"$BUILD_JOBS"
+  make -C kernel ARCH="$KERNEL_ARCH" HOSTCFLAGS="$KERNEL_HOSTCFLAGS" "${KERNEL_DTS}.img" -j"$BUILD_JOBS"
   require_file "$SOURCE_DIR/kernel/arch/arm64/boot/Image"
   require_file "$SOURCE_DIR/kernel/arch/arm64/boot/dts/rockchip/${KERNEL_DTS}.dtb"
   if [[ -x u-boot/scripts/pack_resource.sh && -f kernel/resource.img ]]; then

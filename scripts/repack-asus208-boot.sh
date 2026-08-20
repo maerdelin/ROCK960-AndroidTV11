@@ -34,10 +34,12 @@ require_file "$ROCK960_ANDROID_DTS"
 require_cmd sfdisk
 require_cmd dd
 require_cmd cmp
+ensure_workspace
 
 source_build_env
 KERNEL_ARCH="$(get_build_var PRODUCT_KERNEL_ARCH)"
 KERNEL_DTS="$(get_build_var PRODUCT_KERNEL_DTS)"
+KERNEL_CONFIG="$(get_build_var PRODUCT_KERNEL_CONFIG)"
 [[ "$KERNEL_DTS" == "rk3399-rock960-ab-android" ]] \
   || die "unexpected kernel DTS after lunch: $KERNEL_DTS"
 
@@ -56,13 +58,20 @@ sectors="$(printf '%s\n' "$boot_line" | sed -n 's/.*size= *\([0-9]*\).*/\1/p')"
 dd if="$FIRMWARE" of="$ORIG_BOOT" bs=512 skip="$start" count="$sectors" status=progress
 require_file "$ORIG_BOOT"
 
+log "configuring pinned ROCK960 Android kernel: $KERNEL_CONFIG"
+read -r -a cfgs <<< "$KERNEL_CONFIG"
+make -C "$SOURCE_DIR/kernel" ARCH="$KERNEL_ARCH" HOSTCFLAGS="$KERNEL_HOSTCFLAGS" "${cfgs[@]}"
+
 log "repacking ASUS boot.img with ROCK960 kernel target: ${KERNEL_DTS}.img"
 (
   cd "$SOURCE_DIR"
-  BOOT_IMG="$ORIG_BOOT" make -C kernel ARCH="$KERNEL_ARCH" "${KERNEL_DTS}.img" -j"$BUILD_JOBS"
+  BOOT_IMG="$ORIG_BOOT" make -C kernel ARCH="$KERNEL_ARCH" HOSTCFLAGS="$KERNEL_HOSTCFLAGS" "${KERNEL_DTS}.img" -j"$BUILD_JOBS"
 )
 require_file "$SOURCE_DIR/kernel/boot.img"
 require_file "$SOURCE_DIR/kernel/arch/arm64/boot/Image"
+COMPILED_DTB="$SOURCE_DIR/kernel/arch/arm64/boot/dts/rockchip/${KERNEL_DTS}.dtb"
+require_file "$COMPILED_DTB"
+require_file "$SOURCE_DIR/kernel/resource.img"
 
 mkdir -p "$(dirname "$OUT")"
 cp -a "$SOURCE_DIR/kernel/boot.img" "$OUT"
@@ -81,10 +90,19 @@ if cmp -s "$ORIG_UNPACK/kernel" "$NEW_UNPACK/kernel"; then
   die "repacked boot.img still contains the original ASUS kernel"
 fi
 
+cmp "$NEW_UNPACK/dtb" "$COMPILED_DTB" >/dev/null \
+  || die "repacked boot.img does not contain the compiled ROCK960 DTB"
+if cmp -s "$ORIG_UNPACK/dtb" "$NEW_UNPACK/dtb"; then
+  die "repacked boot.img still contains the original ASUS DTB"
+fi
+
+cmp "$NEW_UNPACK/second" "$SOURCE_DIR/kernel/resource.img" >/dev/null \
+  || die "repacked boot.img second stage does not match the built ROCK960 resource.img"
+
 header_re='^(boot image header version|os version|os patch level|command line args|additional command line args):'
 grep -E "$header_re" "$work/orig.log" > "$work/orig.header"
 grep -E "$header_re" "$work/new.log" > "$work/new.header"
 cmp "$work/orig.header" "$work/new.header" >/dev/null \
   || die "repacked boot.img changed ASUS header/cmdline metadata"
 
-log "boot repack verified: ASUS ramdisk/header preserved; ROCK960 kernel installed: $OUT"
+log "boot repack verified: ASUS ramdisk/header preserved; ROCK960 kernel/DTB/resource installed: $OUT"

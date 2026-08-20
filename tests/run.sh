@@ -17,6 +17,12 @@ grep -q 'rock960-kernel-build-fixups.patch' "$ROOT/scripts/apply-kernel-fixups.s
 grep -q 'pack-safe-update.sh' "$ROOT/scripts/in-tree-build.sh"
 grep -q 'generated package-file unexpectedly includes persistent uboot/trust' "$ROOT/scripts/pack-safe-update.sh"
 grep -q 'repack-asus208-current.sh' "$ROOT/README.md"
+grep -q 'KERNEL_HOSTCFLAGS="-fcommon"' "$ROOT/config/default.env"
+grep -q 'NEW_UNPACK/dtb' "$ROOT/scripts/repack-asus208-boot.sh"
+grep -q 'NEW_UNPACK/second' "$ROOT/scripts/repack-asus208-boot.sh"
+grep -q 'assert_geometry uboot 16384 8192' "$ROOT/scripts/repack-asus208-current.sh"
+grep -q 'assert_geometry super 2011136 6373376' "$ROOT/scripts/repack-asus208-current.sh"
+grep -q 'reproduce-asus208-current.sh' "$ROOT/README.md"
 
 # The flash payload path must not regress to packaging persistent ASUS/Tinker U-Boot/trust.
 ! grep -Eq 'copy_required .*image_dir/(uboot|trust)\.img' "$ROOT/scripts/in-tree-build.sh"

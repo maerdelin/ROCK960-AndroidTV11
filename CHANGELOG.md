@@ -2,6 +2,7 @@
 
 ## Unreleased — 2026-08-20 bring-up closure
 
+- Final full-flow hardening audit: carry `HOSTCFLAGS=-fcommon` through automated kernel builds; make the ASUS boot reproducer configure the pinned kernel itself; verify kernel + DTB + resource/second; lock the official 2.0.8 boot-critical GPT geometry; functionally test idempotent kernel fixups and safe RKUpdate packing; and add a one-command exact-current reproducer.
 - Wire `patches/rock960-kernel-build-fixups.patch` into the normal `make port` flow through
   an idempotent `scripts/apply-kernel-fixups.sh` helper.
 - Preserve the verified `panel-simple.c` Tinker-MCU guards and ROCK960 Ethernet MAC fallback

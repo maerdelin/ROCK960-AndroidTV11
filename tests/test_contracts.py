@@ -90,5 +90,46 @@ class ContractTests(unittest.TestCase):
         self.assertIn("rock960-ab-pass", audit)
 
 
+    def test_modern_host_kernel_compatibility_is_wired(self):
+        env = (ROOT / "config/default.env").read_text()
+        build = (ROOT / "scripts/in-tree-build.sh").read_text()
+        repack = (ROOT / "scripts/repack-asus208-boot.sh").read_text()
+        self.assertIn('KERNEL_HOSTCFLAGS="-fcommon"', env)
+        self.assertGreaterEqual(build.count('HOSTCFLAGS="$KERNEL_HOSTCFLAGS"'), 2)
+        self.assertGreaterEqual(repack.count('HOSTCFLAGS="$KERNEL_HOSTCFLAGS"'), 2)
+
+    def test_boot_repack_is_self_contained_and_verifies_all_payloads(self):
+        text = (ROOT / "scripts/repack-asus208-boot.sh").read_text()
+        self.assertIn('KERNEL_CONFIG="$(get_build_var PRODUCT_KERNEL_CONFIG)"', text)
+        self.assertIn('"${cfgs[@]}"', text)
+        self.assertIn('cmp "$NEW_UNPACK/kernel"', text)
+        self.assertIn('cmp "$NEW_UNPACK/dtb" "$COMPILED_DTB"', text)
+        self.assertIn('cmp "$NEW_UNPACK/second" "$SOURCE_DIR/kernel/resource.img"', text)
+        self.assertIn('ensure_workspace', text)
+
+    def test_exact_current_repack_locks_boot_critical_geometry(self):
+        text = (ROOT / "scripts/repack-asus208-current.sh").read_text()
+        self.assertIn('subprocess.check_output(["sfdisk", "-d", img], text=True)', text)
+        self.assertIn('entries.append(f"0x{size:08x}@0x{start:08x}({name})")', text)
+        self.assertNotIn('0x00159400', text)
+        self.assertIn('assert_geometry uboot 16384 8192', text)
+        self.assertIn('assert_geometry trust 24576 8192', text)
+        self.assertIn('assert_geometry boot 59392 81920', text)
+        self.assertIn('assert_geometry super 2011136 6373376', text)
+        self.assertIn('ensure_workspace', text)
+
+    def test_source_audit_checks_the_verified_kernel_fixups(self):
+        text = (ROOT / "scripts/audit-source.sh").read_text()
+        self.assertIn('ROCK960 Ethernet MAC fallback fix', text)
+        self.assertIn('Tinker-MCU-only panel variables guarded', text)
+
+    def test_one_command_exact_current_reproducer_exists(self):
+        text = (ROOT / "scripts/reproduce-asus208-current.sh").read_text()
+        self.assertIn('apply-port.sh', text)
+        self.assertIn('audit-source.sh', text)
+        self.assertIn('repack-asus208-boot.sh', text)
+        self.assertIn('repack-asus208-current.sh', text)
+
+
 if __name__ == "__main__":
     unittest.main()

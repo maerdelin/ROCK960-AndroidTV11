@@ -43,8 +43,10 @@ grep -Eq '^super[[:space:]]' "$LATEST/images/package-file.generated" \
 require_file "$LATEST/bootloader-debug/uboot.img"
 require_file "$LATEST/bootloader-debug/trust.img"
 
-grep -Eq "MACHINE:[[:space:]]*3399|CMDLINE:.*super" "$LATEST/images/parameter.txt" \
-  || die "packaged parameter.txt does not look like the RK3399 ATV partition map"
+grep -Eq "^MACHINE:[[:space:]]*3399$" "$LATEST/images/parameter.txt" \
+  || die "packaged parameter.txt has an unexpected machine identity"
+grep -Eq "^CMDLINE:.*\(super\)" "$LATEST/images/parameter.txt" \
+  || die "packaged parameter.txt is missing the super partition"
 grep -q "0x00614000@0x00159400(super)" "$LATEST/images/parameter.txt" \
   || die "packaged parameter.txt lost the audited super partition layout"
 
