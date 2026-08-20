@@ -137,6 +137,23 @@ def main() -> None:
     text = text.replace(UPSTREAM_WIFI_SELECTOR, ROCK960_WIFI_SELECTOR, 1)
     if UPSTREAM_WIFI_SELECTOR in text or ROCK960_WIFI_SELECTOR not in text:
         raise SystemExit("failed to generate the AP6356S ROCK960 Wi-Fi selector")
+
+    # ASUS/Tinker 2.0.8 ROCK960 DTS contains a stale &vpu block.
+    # This kernel exposes vdpu/vepu/vpu_mmu instead, so leaving &vpu
+    # causes dtc to fail with "Label or path vpu not found".
+    stale_vpu = '''&vpu {
+\tstatus = "okay";
+\t/* 0 means ion, 1 means drm */
+\t//allocator = <0>;
+};
+'''
+    if text.count(stale_vpu) != 1:
+        raise SystemExit(
+            "expected exactly one stale ASUS/Tinker &vpu block; "
+            f"found {text.count(stale_vpu)}"
+        )
+    text = text.replace(stale_vpu, "", 1)
+
     out.write_text(text.rstrip() + ANDROID_GLUE + "\n")
 
     print(generated_dtsi)
