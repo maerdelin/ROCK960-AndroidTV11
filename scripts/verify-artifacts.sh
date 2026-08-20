@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(dirname "$0")/common.sh"
+
 LATEST="$ARTIFACT_DIR/latest"
 require_dir "$LATEST"
 IMG="$(find "$LATEST" -maxdepth 1 -type f -name '*-update.img' | sort | tail -n1 || true)"
@@ -9,16 +10,42 @@ IMG="$(find "$LATEST" -maxdepth 1 -type f -name '*-update.img' | sort | tail -n1
 [[ -s "$IMG" ]] || die "update.img is empty"
 IMG_SIZE="$(stat -c %s "$IMG")"
 (( IMG_SIZE > 100 * 1024 * 1024 )) || die "update.img is suspiciously small (${IMG_SIZE} bytes)"
+
 require_file "$LATEST/SHA256SUMS.txt"
 require_file "$LATEST/WIFI-SHA256SUMS.txt"
 (cd "$LATEST" && sha256sum -c SHA256SUMS.txt)
-[[ "$(wc -l < "$LATEST/WIFI-SHA256SUMS.txt")" -eq 4 ]] || die "WIFI-SHA256SUMS.txt must contain exactly four AP6356S payload hashes"
+
+[[ "$(wc -l < "$LATEST/WIFI-SHA256SUMS.txt")" -eq 4 ]] \
+  || die "WIFI-SHA256SUMS.txt must contain exactly four AP6356S payload hashes"
 for f in fw_bcmdhd.bin fw_bcmdhd_apsta.bin fw_bcmdhd_p2p.bin nvram.txt; do
-  grep -Eq "^[0-9a-f]{64}[[:space:]]+$f$" "$LATEST/WIFI-SHA256SUMS.txt" || die "missing Wi-Fi hash entry: $f"
+  grep -Eq "^[0-9a-f]{64}[[:space:]]+$f$" "$LATEST/WIFI-SHA256SUMS.txt" \
+    || die "missing Wi-Fi hash entry: $f"
 done
-for f in boot.img recovery.img super.img dtbo.img vbmeta.img uboot.img trust.img MiniLoaderAll.bin parameter.txt baseparameter.img; do
+
+for f in boot.img recovery.img super.img dtbo.img vbmeta.img misc.img MiniLoaderAll.bin parameter.txt baseparameter.img package-file.generated; do
   [[ -s "$LATEST/images/$f" ]] || die "missing packaged component: $f"
 done
-grep -Eq "MACHINE:[[:space:]]*3399|CMDLINE:.*super" "$LATEST/images/parameter.txt" || die "packaged parameter.txt does not look like the RK3399 ATV partition map"
-grep -q "0x00614000@0x00159400(super)" "$LATEST/images/parameter.txt" || die "packaged parameter.txt lost the audited super partition layout"
-log "artifact verification passed: $IMG"
+
+# Safe first-boot package must not persistently flash a Tinker/ASUS U-Boot or trust image.
+for forbidden in uboot.img trust.img; do
+  [[ ! -e "$LATEST/images/$forbidden" ]] \
+    || die "unsafe packaged component present: $LATEST/images/$forbidden"
+done
+! grep -Eq '^(uboot|trust)[[:space:]]' "$LATEST/images/package-file.generated" \
+  || die "package-file.generated contains persistent uboot/trust payloads"
+
+grep -Eq '^boot[[:space:]]' "$LATEST/images/package-file.generated" \
+  || die "package-file.generated is missing boot payload"
+grep -Eq '^super[[:space:]]' "$LATEST/images/package-file.generated" \
+  || die "package-file.generated is missing super payload"
+
+# Compiled bootloader artifacts are preserved for diagnostics only, outside flash payloads.
+require_file "$LATEST/bootloader-debug/uboot.img"
+require_file "$LATEST/bootloader-debug/trust.img"
+
+grep -Eq "MACHINE:[[:space:]]*3399|CMDLINE:.*super" "$LATEST/images/parameter.txt" \
+  || die "packaged parameter.txt does not look like the RK3399 ATV partition map"
+grep -q "0x00614000@0x00159400(super)" "$LATEST/images/parameter.txt" \
+  || die "packaged parameter.txt lost the audited super partition layout"
+
+log "artifact verification passed with safe first-boot packaging policy: $IMG"

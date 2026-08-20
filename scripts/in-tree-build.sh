@@ -63,12 +63,12 @@ verify_wifi_payload() {
     dst_hash="$(sha256sum "$vendor_fw_dir/$dst" | awk '{print $1}')"
     [[ "$src_hash" == "$dst_hash" ]] || die "Wi-Fi SHA-256 mismatch for $dst"
     log "Wi-Fi payload verified: $dst <= $src ($dst_hash)"
-  done <<'EOF'
+  done <<'EOF_WIFI'
 fw_bcm4356a2_ag.bin fw_bcmdhd.bin
 fw_bcm4356a2_ag_apsta.bin fw_bcmdhd_apsta.bin
 fw_bcm4356a2_ag_p2p.bin fw_bcmdhd_p2p.bin
 nvram_ap6356s.txt nvram.txt
-EOF
+EOF_WIFI
 }
 
 write_wifi_hashes() {
@@ -90,7 +90,7 @@ else
 fi
 
 build_uboot() {
-  log "building RK3399 Android U-Boot ($UBOOT_DEFCONFIG)"
+  log "building RK3399 Android U-Boot ($UBOOT_DEFCONFIG) for compatibility validation/debug artifacts"
   (
     cd u-boot
     make clean >/dev/null 2>&1 || true
@@ -132,13 +132,6 @@ build_android() {
   verify_wifi_payload
 }
 
-find_loader() {
-  local f
-  f="$(find u-boot -maxdepth 1 -type f \( -name '*_loader_*.bin' -o -name '*loader*.bin' \) | sort | head -n1 || true)"
-  [[ -n "$f" ]] || die "U-Boot loader binary not found"
-  printf '%s\n' "$f"
-}
-
 find_trust() {
   local f
   for f in u-boot/trust_nand.img u-boot/trust_with_ta.img u-boot/trust.img; do
@@ -154,13 +147,14 @@ copy_required() {
 }
 
 pack_update() {
-  local rockdev image_dir loader trust baseparam dtbo vbmeta final_name
+  local rockdev image_dir trust baseparam dtbo vbmeta final_name debug_dir
   verify_wifi_payload
   rockdev="$SOURCE_DIR/RKTools/linux/Linux_Pack_Firmware/rockdev"
   image_dir="$rockdev/Image-${PRODUCT_NAME}"
   require_dir "$rockdev"
-  require_file "$rockdev/mkupdate_rk3399.sh"
-  require_file "$rockdev/package-file"
+  require_file "$rockdev/afptool"
+  require_file "$rockdev/rkImageMaker"
+  require_file "$rockdev/gen-package-file.sh"
   rm -rf "$image_dir"
   mkdir -p "$image_dir"
 
@@ -179,16 +173,7 @@ pack_update() {
   copy_required "$vbmeta" "$image_dir/vbmeta.img"
 
   copy_required "$SOURCE_DIR/rkst/Image/misc.img" "$image_dir/misc.img"
-  copy_required "$SOURCE_DIR/u-boot/uboot.img" "$image_dir/uboot.img"
-  loader="$(find_loader)"
-  trust="$(find_trust)"
-  copy_required "$loader" "$image_dir/MiniLoaderAll.bin"
-  copy_required "$trust" "$image_dir/trust.img"
   copy_required "$GENERATED_DEVICE_DIR/parameter.txt" "$image_dir/parameter.txt"
-
-  if [[ -f "$GENERATED_DEVICE_DIR/config.cfg" ]]; then
-    cp -a "$GENERATED_DEVICE_DIR/config.cfg" "$image_dir/config.cfg"
-  fi
 
   baseparam="$TARGET_BASE_PARAMETER_IMAGE"
   if [[ -n "$baseparam" && "$baseparam" = /* && -f "$baseparam" ]]; then
@@ -200,34 +185,36 @@ pack_update() {
     copy_required "$SOURCE_DIR/$baseparam" "$image_dir/baseparameter.img"
   fi
 
-  # Keep useful standalone bootloader artifacts even though package-file does not flash idbloader.
-  [[ -f u-boot/idbloader.img ]] && cp -a u-boot/idbloader.img "$image_dir/idbloader.img"
+  # Keep resource.img as an inspection artifact when available. It is already
+  # embedded in the Android boot image path used by this port and is not a
+  # separate partition payload for the current header-v2 layout.
   [[ -f kernel/resource.img ]] && cp -a kernel/resource.img "$image_dir/resource.img"
 
-  # Validate every non-reserved Image entry required by upstream package-file.
-  while read -r name rel rest; do
-    [[ -z "${name:-}" || "$name" == \#* ]] && continue
-    [[ "${rel:-}" == "RESERVED" || "${rel:-}" == "SELF" ]] && continue
-    if [[ "$rel" == Image/* ]]; then
-      [[ -f "$rockdev/$rel" || -f "$image_dir/${rel#Image/}" ]] || die "package-file requires missing $rel"
-    fi
-  done < "$rockdev/package-file"
-
-  cd "$rockdev"
-  rm -rf Image
-  ln -s "$(basename "$image_dir")" Image
-  rm -f update.img Image/update.img
-  log "packing Rockchip update.img with upstream mkupdate_rk3399.sh"
-  bash ./mkupdate_rk3399.sh
+  # Critical first-boot policy: do NOT place uboot.img or trust.img in image_dir.
+  # pack-safe-update.sh generates the package-file from files actually present,
+  # so the existing ROCK960 persistent boot chain is not overwritten.
+  "$CONTROLLER_DIR/scripts/pack-safe-update.sh" "$image_dir" "$rockdev/update.img"
   require_file "$rockdev/update.img"
 
   mkdir -p "$ARTIFACT_DIR/latest"
   final_name="ROCK960-AndroidTV11-ASUS-2.0.8-$(date -u +%Y%m%d-%H%M)-update.img"
   cp -a "$rockdev/update.img" "$ARTIFACT_DIR/latest/$final_name"
+
+  rm -rf "$ARTIFACT_DIR/latest/images" "$ARTIFACT_DIR/latest/bootloader-debug"
   cp -a "$image_dir" "$ARTIFACT_DIR/latest/images"
+
+  # U-Boot/trust are still compiled and retained for UART/debug comparison,
+  # but are deliberately outside the flash payload directory.
+  debug_dir="$ARTIFACT_DIR/latest/bootloader-debug"
+  mkdir -p "$debug_dir"
+  copy_required "$SOURCE_DIR/u-boot/uboot.img" "$debug_dir/uboot.img"
+  trust="$(find_trust)"
+  copy_required "$SOURCE_DIR/$trust" "$debug_dir/trust.img"
+  [[ -f u-boot/idbloader.img ]] && cp -a u-boot/idbloader.img "$debug_dir/idbloader.img"
+
   write_wifi_hashes
   (cd "$ARTIFACT_DIR/latest" && sha256sum "$final_name" > SHA256SUMS.txt)
-  log "packed: $ARTIFACT_DIR/latest/$final_name"
+  log "packed safe first-boot RKUpdate image: $ARTIFACT_DIR/latest/$final_name"
 }
 
 case "$STAGE" in

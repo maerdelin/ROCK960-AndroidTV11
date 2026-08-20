@@ -7,6 +7,10 @@ require_dir "$SOURCE_DIR"
 require_dir "$UPSTREAM_DEVICE_DIR"
 require_file "$ROCK960_BASE_DTS"
 
+# Apply the exact kernel source fixes that were validated during the 2026-08-20
+# ROCK960 bring-up. The helper is idempotent and aborts on an unexpected source tree.
+"$CONTROLLER_DIR/scripts/apply-kernel-fixups.sh"
+
 log "generating $PRODUCT_NAME from ASUS/Rockchip rk3399_atv"
 python3 "$CONTROLLER_DIR/tools/port_product.py" \
   --source "$SOURCE_DIR" \

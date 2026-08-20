@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — 2026-08-20 bring-up closure
+
+- Wire `patches/rock960-kernel-build-fixups.patch` into the normal `make port` flow through
+  an idempotent `scripts/apply-kernel-fixups.sh` helper.
+- Preserve the verified `panel-simple.c` Tinker-MCU guards and ROCK960 Ethernet MAC fallback
+  fix across clean ASUS 2.0.8 source checkouts.
+- Keep the generated ROCK960 Android DTS fix that removes the stale ASUS `&vpu` node.
+- Replace the default persistent-U-Boot/trust RKUpdate payload policy with the safer
+  first-boot package used during real bring-up: outer `MiniLoaderAll.bin` is retained, while
+  `uboot.img` and `trust.img` remain debug-only artifacts.
+- Add `scripts/pack-safe-update.sh` with package-file policy checks and byte-for-byte packed
+  `boot.img` verification.
+- Add `scripts/repack-asus208-boot.sh` to reproduce and verify the ASUS-ramdisk + ROCK960
+  kernel/DTB/resource boot image used during the first bring-up.
+- Add `scripts/repack-asus208-current.sh` to reproduce the minimal official-ASUS-partitions
+  + verified ROCK960 boot `update.img` workflow.
+- Update artifact verification and controller tests so the kernel-fix and safe-packaging
+  wiring cannot silently regress.
+- Document the exact 2026-08-20 bring-up decisions in `docs/BRINGUP_2026-08-20.md`.
+
 ## v1.2.0-final
 
 - Lock the target to original ROCK960 Model A/B and explicitly exclude ROCK960C.

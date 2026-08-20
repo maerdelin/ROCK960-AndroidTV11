@@ -8,7 +8,9 @@ class ContractTests(unittest.TestCase):
     def test_no_tinker_sdboot_in_build_path(self):
         text = (ROOT / "scripts/in-tree-build.sh").read_text()
         self.assertNotIn("sdboot.sh", text)
-        self.assertIn("mkupdate_rk3399.sh", text)
+        self.assertIn("pack-safe-update.sh", text)
+        self.assertNotIn('copy_required "$SOURCE_DIR/u-boot/uboot.img" "$image_dir/uboot.img"', text)
+        self.assertNotIn('copy_required "$SOURCE_DIR/$trust" "$image_dir/trust.img"', text)
 
     def test_no_asus_top_level_update_build(self):
         for name in ["one-shot.sh", "build.sh", "pack.sh", "in-tree-build.sh"]:
@@ -51,7 +53,6 @@ class ContractTests(unittest.TestCase):
         self.assertIn('PLATFORM_PRODUCT="$(get_build_var TARGET_BOARD_PLATFORM_PRODUCT)"', text)
         self.assertIn('[[ "$PLATFORM_PRODUCT" == "atv" ]]', text)
 
-
     def test_ap6356s_wifi_contract_is_enforced(self):
         audit = (ROOT / "scripts/audit-source.sh").read_text()
         build = (ROOT / "scripts/in-tree-build.sh").read_text()
@@ -71,6 +72,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("suspiciously small", text)
         self.assertIn("0x00614000@0x00159400(super)", text)
         self.assertIn("WIFI-SHA256SUMS.txt", text)
+        self.assertIn("package-file.generated contains persistent uboot/trust payloads", text)
 
     def test_board_identity_is_locked_to_original_ab(self):
         env = (ROOT / "config/default.env").read_text()

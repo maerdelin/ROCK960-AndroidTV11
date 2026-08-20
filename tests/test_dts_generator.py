@@ -22,6 +22,11 @@ BASE = '''/dts-v1/;
 &usbdrd_dwc3_0 {};
 &gpu {};
 &pcie0 {};
+&vpu {
+\tstatus = "okay";
+\t/* 0 means ion, 1 means drm */
+\t//allocator = <0>;
+};
 '''
 
 LINUX_DTSI = '''#include "rk3399-vop-clk-set.dtsi"
@@ -61,7 +66,7 @@ class DtsTest(unittest.TestCase):
             self.assertNotIn('wifi_chip_type = "ap6354"', text)
             self.assertIn('wifi_chip_type = "ap6354"', base.read_text())
             self.assertNotIn("rk3399-android.dtsi", text)
-
+            self.assertNotIn("&vpu {", text)
 
     def test_refuses_unexpected_wifi_selector_shape(self):
         with tempfile.TemporaryDirectory() as td:
